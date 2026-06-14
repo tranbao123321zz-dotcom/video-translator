@@ -1,11 +1,10 @@
-
-name: Dich Video Ra MP4
+name: Dich Video Ra MP4 Co Phu De
 
 on:
   workflow_dispatch:
     inputs:
       video_url:
-        description: 'Link video (YouTube, Google Drive, Facebook)'
+        description: 'Link video (YouTube)'
         required: true
         type: string
 
@@ -13,22 +12,75 @@ jobs:
   translate:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
-      - name: Install yt-dlp
-        run: pip install yt-dlp
+      - name: Install dependencies
+        run: |
+          pip install yt-dlp openai-whisper requests
+          sudo apt update
+          sudo apt install -y ffmpeg
 
       - name: Download video
         run: yt-dlp -o input.mp4 "${{ github.event.inputs.video_url }}"
 
-      - name: Upload result
+      - name: Transcribe and translate
+        run: |
+          python -c "
+import whisper
+import requests
+import subprocess
+import time
+
+def translate(text, target='vi'):
+    if not text: return text
+    url = 'https://translate.googleapis.com/translate_a/single'
+    params = {'client': 'gtx', 'sl': 'auto', 'tl': target, 'dt': 't', 'q': text}
+    try:
+        resp = requests.get(url, params=params, timeout=30)
+        return ''.join([item[0] for item in resp.json()[0] if item[0]])
+    except:
+        return text
+
+print('Dang nhan dang giong noi...')
+model = whisper.load_model('base')
+result = model.transcribe('input.mp4')
+
+print('Dang dich...')
+srt_lines = []
+for i, seg in enumerate(result['segments']):
+    start = seg['start']
+    end = seg['end']
+    original = seg['text'].strip()
+    translated = translate(original, 'vi')
+    srt_lines.append(f\"{i+1}\")
+    srt_lines.append(f\"{int(start//3600):02d}:{int(start//60)%60:02d}:{int(start%60):02d},{int((start%1)*1000):03d} --> {int(end//3600):02d}:{int(end//60)%60:02d}:{int(end%60):02d},{int((end%1)*1000):03d}\")
+    srt_lines.append(translated)
+    srt_lines.append('')
+    print(f'Da dich {i+1}/{len(result[\"segments\"])}')
+
+with open('subtitle.srt', 'w', encoding='utf-8') as f:
+    f.write('\\n'.join(srt_lines))
+print('Da tao file subtitle.srt')
+"
+
+      - name: Burn subtitle to video
+        run: |
+          ffmpeg -i input.mp4 -vf "subtitles=subtitle.srt:force_style='FontName=Arial,FontSize=22,PrimaryColour=&H00FFFFFF,OutlineColour=&H00000000,Alignment=2,MarginV=30'" -c:v libx264 -preset fast -crf 23 -c:a copy -y output_dich.mp4
+          ls -lh output_dich.mp4
+
+      - name: Upload MP4
         uses: actions/upload-artifact@v4
         with:
-          name: video-da-tai
-          path: input.mp4
+          name: video-da-dich
+          path: output_dich.mp4
+
+      - name: Upload SRT
+        uses: actions/upload-artifact@v4
+        with:
+          name: phu-de-srt
+          path: subtitle.srt
