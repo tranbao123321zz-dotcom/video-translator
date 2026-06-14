@@ -1,4 +1,4 @@
-name: Dich Video Ra MP4 Co Phu De
+name: Dich Video Ra MP4
 
 on:
   workflow_dispatch:
@@ -19,16 +19,16 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install
         run: |
           pip install yt-dlp openai-whisper requests
           sudo apt update
           sudo apt install -y ffmpeg
 
-      - name: Download video
+      - name: Download
         run: yt-dlp -o input.mp4 "${{ github.event.inputs.video_url }}"
 
-      - name: Run translator
+      - name: Process
         run: python translate.py
 
       - name: Upload MP4
